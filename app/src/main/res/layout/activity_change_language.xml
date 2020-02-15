@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".ChangeLanguage">
+
+    <include
+        android:id="@+id/toolbar"
+        layout="@layout/toolbar_layout" />
+
+    <RadioGroup
+        android:id="@+id/radiogroup"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/toolbar">
+
+        <RadioButton
+            android:id="@+id/english"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10sp"
+            android:onClick="onRadioButtonClicked"
+            android:text="English"
+            android:textSize="25sp" />
+
+        <RadioButton
+            android:id="@+id/hindi"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20sp"
+            android:onClick="onRadioButtonClicked"
+            android:text="Hindi"
+            android:textSize="25sp" />
+
+        <RadioButton
+            android:id="@+id/marathi"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20sp"
+            android:onClick="onRadioButtonClicked"
+            android:text="Marathi"
+            android:textSize="25sp" />
+
+        <RadioButton
+            android:id="@+id/gujarati"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20sp"
+            android:onClick="onRadioButtonClicked"
+            android:text="Gujarati"
+            android:textSize="25sp" />
+
+        <RadioButton
+            android:id="@+id/kannada"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20sp"
+            android:onClick="onRadioButtonClicked"
+            android:text="Kannada"
+            android:textSize="25sp" />
+
+        <RadioButton
+            android:id="@+id/punjabi"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20sp"
+            android:onClick="onRadioButtonClicked"
+            android:text="Punjabi"
+            android:textSize="25sp" />
+
+        <RadioButton
+            android:id="@+id/malyalam"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20sp"
+            android:onClick="onRadioButtonClicked"
+            android:text="Malyalam"
+            android:textSize="25sp" />
+    </RadioGroup>
+
+</androidx.constraintlayout.widget.ConstraintLayout>
