@@ -3,6 +3,7 @@ package com.vil.vil_bot;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -13,7 +14,8 @@ import android.media.MediaRecorder;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
-import android.os.Environment;
+import android.speech.SpeechRecognizer;
+import android.speech.tts.TextToSpeech;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
@@ -50,6 +52,7 @@ import com.karumi.dexter.listener.multi.MultiplePermissionsListener;
 import com.skyfishjy.library.RippleBackground;
 import com.vil.vil_bot.adapters.AdapterChat;
 import com.vil.vil_bot.models.ModelMessage;
+import com.vil.vil_bot.services.VoiceRecogService;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -61,6 +64,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 import omrecorder.AudioChunk;
@@ -87,15 +91,19 @@ import org.json.JSONObject;
 
 public class MainActivity extends AppCompatActivity {
 
-    static String host = "http://192.168.32.135:5000";
+
+    public static String langCode = "en-IN";
+    static String host = "http://10.10.40.36:5000";
     static File audioFile = null;
 
     SessionsClient client;
     SessionName sessionName;
 
+    TextToSpeech textToSpeech;
+    SpeechRecognizer speechRecognizer;
+
     EditText query;
     String uuid;
-    String langCode;
 
     RecyclerView recyclerView;
     ArrayList<ModelMessage> modelMessageArrayList = new ArrayList<>();
@@ -139,6 +147,7 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
         Intent i = getIntent();
         langCode = i.getStringExtra("langCode");
+        String queryString = i.getStringExtra("QUERY");
         responseIntent = "";
 
         if(langCode == null){
@@ -153,7 +162,7 @@ public class MainActivity extends AppCompatActivity {
 
         Toast.makeText(this, langCode, Toast.LENGTH_SHORT).show();
 
-        rippleBackground = findViewById(R.id.ripple_effect);
+        //rippleBackground = findViewById(R.id.ripple_effect);
         sendButton = findViewById(R.id.send_btn);
         query = findViewById(R.id.edit_query);
 
@@ -172,6 +181,15 @@ public class MainActivity extends AppCompatActivity {
 
             client = SessionsClient.create(settings);
             sessionName = SessionName.of(projectId, uuid);
+
+            textToSpeech = new TextToSpeech(getApplicationContext(), new TextToSpeech.OnInitListener() {
+                @Override
+                public void onInit(int status) {
+                    if(status != TextToSpeech.ERROR){
+                        textToSpeech.setLanguage(Locale.forLanguageTag(langCode));
+                    }
+                }
+            });
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -239,6 +257,12 @@ public class MainActivity extends AppCompatActivity {
         if(!checkForTableExists(database))
             createDatabase();
 
+        if(!isMyServiceRunning(VoiceRecogService.class)){
+            startService(new Intent(MainActivity.this, VoiceRecogService.class));
+            Toast.makeText(this, "Service Started !", Toast.LENGTH_SHORT).show();
+        } else {
+            Toast.makeText(this, "Service is already running !", Toast.LENGTH_SHORT).show();
+        }
     }
 
     public void buttonClicked() {
@@ -318,9 +342,11 @@ public class MainActivity extends AppCompatActivity {
             if(text == null)
                 text = response.getQueryResult().getFulfillmentText();
 
-//            String responseIntent = response.getQueryResult().getIntent().getDisplayName();
             responseIntent = response.getQueryResult().getIntent().getDisplayName();
             Log.e("Intent", responseIntent);
+            if(textToSpeech != null){
+                textToSpeech.speak(text, TextToSpeech.QUEUE_FLUSH, null);
+            }
 
             adapterChat.addItem(new ModelMessage(text, responseIntent, "bot"));
             recyclerView.scrollToPosition(adapterChat.getItemCount() - 1);
@@ -634,6 +660,7 @@ public class MainActivity extends AppCompatActivity {
                     return new JSONObject(EntityUtils.toString(response.getEntity()));
                 } catch (Exception e) {
                     // show error
+                    e.printStackTrace();
                 }
 
                 return null;
@@ -650,9 +677,10 @@ public class MainActivity extends AppCompatActivity {
             try {
 //                Toast.makeText(activity, resp.getString("english"), Toast.LENGTH_SHORT).show();
 //                Log.e("STOP", resp.getString("english"));
-                ((MainActivity) activity).adapterChat.addItem(new ModelMessage(resp.getString("source_lang"), "user", "user"));
-                QueryInput input = QueryInput.newBuilder().setText(TextInput.newBuilder().setText(resp.getString("source_lang")).setLanguageCode("en")).build();
-                new RequestTask(activity, sessionName, client, input, resp.getString("source_lang"),0).execute();
+//                ((MainActivity) activity).adapterChat.addItem(new ModelMessage(resp.getString("source_lang"), "user", "user"));
+//                QueryInput input = QueryInput.newBuilder().setText(TextInput.newBuilder().setText(resp.getString("source_lang")).setLanguageCode("en")).build();
+//                new RequestTask(activity, sessionName, client, input, resp.getString("source_lang"),0).execute();
+                ((MainActivity)activity).query.setText(resp.getString("source_lang"));
 
             } catch (Exception e) {
                 if(e instanceof NullPointerException){
@@ -663,6 +691,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+
     private boolean checkForTableExists(SQLiteDatabase db){
         String sql = "SELECT name FROM sqlite_master WHERE type='table' AND name='SMS'";
         Cursor mCursor = db.rawQuery(sql, null);
@@ -672,5 +701,16 @@ public class MainActivity extends AppCompatActivity {
         mCursor.close();
         return false;
     }
+
+    private boolean isMyServiceRunning(Class<?> serviceClass) {
+        ActivityManager manager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+        for (ActivityManager.RunningServiceInfo service : manager.getRunningServices(Integer.MAX_VALUE)) {
+            if (serviceClass.getName().equals(service.service.getClassName())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
 }
 

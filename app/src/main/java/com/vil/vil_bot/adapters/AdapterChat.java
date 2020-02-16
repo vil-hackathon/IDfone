@@ -10,16 +10,19 @@ import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.animation.LinearInterpolator;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.DefaultItemAnimator;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.cardview.widget.CardView;
 
+import com.agrawalsuneet.dotsloader.loaders.LazyLoader;
 import com.vil.vil_bot.MainActivity;
 import com.vil.vil_bot.R;
 import com.vil.vil_bot.models.ModelMessage;
@@ -46,6 +49,15 @@ public class AdapterChat extends RecyclerView.Adapter<AdapterChat.MyViewHolder>{
     @Override
     public MyViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
         View view = LayoutInflater.from(context).inflate(R.layout.chat_message_card, parent, false);
+//        LazyLoader loader = new LazyLoader(context, 30, 20, ContextCompat.getColor(context, R.color.loader_selected),
+//                ContextCompat.getColor(context, R.color.loader_selected),
+//                ContextCompat.getColor(context, R.color.loader_selected));
+//        loader.setAnimDuration(500);
+//        loader.setFirstDelayDuration(100);
+//        loader.setSecondDelayDuration(200);
+//        loader.setInterpolator(new LinearInterpolator());
+//
+//        ((LazyLoader)view.findViewById(R.id.containerL)).addView(loader);
         return new MyViewHolder(view);
     }
 

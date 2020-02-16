@@ -25,6 +25,23 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content">
 
+
+<!--            <com.agrawalsuneet.dotsloader.loaders.LazyLoader-->
+<!--                android:id="@+id/containerL"-->
+<!--                android:layout_width="20dp"-->
+<!--                android:layout_height="20dp"-->
+<!--                android:layout_margin="0dp"-->
+<!--                android:layout_marginTop="0dp"-->
+<!--                app:lazyloader_animDur="800"-->
+<!--                app:lazyloader_dotsDist="50dp"-->
+<!--                app:lazyloader_dotsRadius="5dp"-->
+<!--                app:lazyloader_firstDelayDur="150"-->
+<!--                app:lazyloader_firstDotColor="#AAAAAA"-->
+<!--                app:lazyloader_interpolator="@android:anim/decelerate_interpolator"-->
+<!--                app:lazyloader_secondDelayDur="300"-->
+<!--                app:lazyloader_secondDotColor="#AAAAAA"-->
+<!--                app:lazyloader_thirdDotColor="#AAAAAA" />-->
+
             <LinearLayout
                 android:id="@+id/chat_card_linear_layout"
                 android:paddingTop="5dp"
@@ -36,6 +53,8 @@
                 android:layout_height="match_parent"
                 android:orientation="vertical">
 
+
+
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
@@ -43,6 +62,8 @@
                     android:text="Good Night"
                     android:textSize="20sp"
                     android:textColor="@color/white"/>
+
+
 
 
             </LinearLayout>
