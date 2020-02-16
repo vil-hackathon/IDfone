@@ -4,8 +4,12 @@ import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.ActivityManager;
+import android.app.AlarmManager;
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
@@ -14,6 +18,7 @@ import android.media.MediaRecorder;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.speech.SpeechRecognizer;
 import android.speech.tts.TextToSpeech;
 import android.util.Log;
@@ -30,9 +35,11 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
 import androidx.core.content.ContextCompat;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.google.android.gms.common.api.Result;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.api.gax.core.FixedCredentialsProvider;
 import com.google.auth.oauth2.GoogleCredentials;
@@ -44,6 +51,10 @@ import com.google.cloud.dialogflow.v2.SessionName;
 import com.google.cloud.dialogflow.v2.SessionsClient;
 import com.google.cloud.dialogflow.v2.SessionsSettings;
 import com.google.cloud.dialogflow.v2.TextInput;
+import com.google.gson.JsonElement;
+import com.google.protobuf.Field;
+import com.google.protobuf.Struct;
+import com.google.protobuf.Value;
 import com.karumi.dexter.Dexter;
 import com.karumi.dexter.MultiplePermissionsReport;
 import com.karumi.dexter.PermissionToken;
@@ -51,7 +62,9 @@ import com.karumi.dexter.listener.PermissionRequest;
 import com.karumi.dexter.listener.multi.MultiplePermissionsListener;
 import com.skyfishjy.library.RippleBackground;
 import com.vil.vil_bot.adapters.AdapterChat;
+import com.vil.vil_bot.helpers.Helper;
 import com.vil.vil_bot.models.ModelMessage;
+import com.vil.vil_bot.services.VoiceListenerService;
 import com.vil.vil_bot.services.VoiceRecogService;
 
 import java.io.BufferedReader;
@@ -63,8 +76,10 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 
 import omrecorder.AudioChunk;
@@ -92,15 +107,17 @@ import org.json.JSONObject;
 public class MainActivity extends AppCompatActivity {
 
 
+    protected TextReciever myReceiver;
+
+
     public static String langCode = "en-IN";
-    static String host = "http://10.10.40.36:5000";
+    public static String host = "http://10.10.40.36:5000";
     static File audioFile = null;
 
     SessionsClient client;
     SessionName sessionName;
 
     TextToSpeech textToSpeech;
-    SpeechRecognizer speechRecognizer;
 
     EditText query;
     String uuid;
@@ -113,6 +130,7 @@ public class MainActivity extends AppCompatActivity {
     FloatingActionButton sendButton;
     SQLiteDatabase database;
     String responseIntent;
+    String assisantStatus = null;
     String GOOGLE_PAY_PACKAGE_NAME = "com.google.android.apps.nbu.paisa.user";
 
     boolean isRecording = true;
@@ -129,11 +147,17 @@ public class MainActivity extends AppCompatActivity {
     @Override
     public boolean onOptionsItemSelected(@NonNull MenuItem item) {
         super.onOptionsItemSelected(item);
+        Intent intent;
         switch (item.getItemId()) {
             case R.id.changeLanguage:
-                Intent intent = new Intent(this, ChangeLanguage.class);
+                intent = new Intent(this, ChangeLanguage.class);
                 startActivity(intent);
+                finish();
                 return true;
+            case R.id.changePreferences:
+                intent = new Intent(this, ChangeVoiceAssistant.class);
+                startActivity(intent);
+                finish();
             case R.id.aboutUs:
                 //about us code here
                 return true;
@@ -145,9 +169,18 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        audioFile = new File(getExternalFilesDir("temp"), "audioFile.wav");
+
         Intent i = getIntent();
-        langCode = i.getStringExtra("langCode");
+        langCode = i.getStringExtra("LANGUAGE_CODE");
         String queryString = i.getStringExtra("QUERY");
+        if(i.hasExtra("ASSISTANT_STATUS")){
+            assisantStatus = i.getStringExtra("ASSISTANT_STATUS");
+        } else {
+            assisantStatus = getSharedPreferences("ASSISTANT_STATUS", MODE_PRIVATE).getString("status", "disabled");
+        }
+
         responseIntent = "";
 
         if(langCode == null){
@@ -160,9 +193,9 @@ public class MainActivity extends AppCompatActivity {
             getSharedPreferences("BOT_CONFIG", MODE_PRIVATE).edit().putString("langCode", langCode).commit();
         }
 
-        Toast.makeText(this, langCode, Toast.LENGTH_SHORT).show();
+        //Toast.makeText(this, langCode, Toast.LENGTH_SHORT).show();
 
-        //rippleBackground = findViewById(R.id.ripple_effect);
+        rippleBackground = findViewById(R.id.ripple_effect);
         sendButton = findViewById(R.id.send_btn);
         query = findViewById(R.id.edit_query);
 
@@ -198,6 +231,7 @@ public class MainActivity extends AppCompatActivity {
         query.addTextChangedListener(new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+
             }
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
@@ -225,7 +259,7 @@ public class MainActivity extends AppCompatActivity {
 
                 }
                 if (report.isAnyPermissionPermanentlyDenied()) {
-                    Toast.makeText(MainActivity.this, "Permission Denied !", Toast.LENGTH_SHORT).show();
+                  //  Toast.makeText(MainActivity.this, "Permission Denied !", Toast.LENGTH_SHORT).show();
                     MainActivity.this.finish();
                 }
             }
@@ -237,12 +271,13 @@ public class MainActivity extends AppCompatActivity {
         recyclerView = findViewById(R.id.chat_recycler_view);
         adapterChat = new AdapterChat(this, modelMessageArrayList, recyclerView);
         recyclerView.setHasFixedSize(true);
+        //above line was added
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
         recyclerView.setAdapter(adapterChat);
 
         setListenerToRootView();
 
-        setupRecorder();
+        //setupRecorder();
 
         sendButton.setOnTouchListener(touchListener);
 
@@ -257,12 +292,40 @@ public class MainActivity extends AppCompatActivity {
         if(!checkForTableExists(database))
             createDatabase();
 
-        if(!isMyServiceRunning(VoiceRecogService.class)){
-            startService(new Intent(MainActivity.this, VoiceRecogService.class));
-            Toast.makeText(this, "Service Started !", Toast.LENGTH_SHORT).show();
+        if(isMyServiceRunning(VoiceRecogService.class)){
+            stopService(new Intent(MainActivity.this, VoiceRecogService.class));
+            //Toast.makeText(this, "Service Stopped !", Toast.LENGTH_SHORT).show();
         } else {
-            Toast.makeText(this, "Service is already running !", Toast.LENGTH_SHORT).show();
+            //Toast.makeText(this, "Service is not running !", Toast.LENGTH_SHORT).show();
         }
+
+        if(queryString != null && queryString.length() > 0){
+            adapterChat.addItem(new ModelMessage(queryString, "user", "user", null));
+            QueryInput input = QueryInput.newBuilder().setText(TextInput.newBuilder().setText(queryString).setLanguageCode("en")).build();
+            new RequestTask(MainActivity.this, sessionName, client, input, queryString, 0).execute();
+        }
+
+        startService(new Intent(this, VoiceListenerService.class));
+    }
+
+    @Override
+    protected void onStop() {
+
+        stopService(new Intent(this, VoiceListenerService.class));
+
+        if(assisantStatus != null && assisantStatus.equals("enabled")){
+            startService(new Intent(MainActivity.this, VoiceRecogService.class));
+            //Toast.makeText(this, "Service Started", Toast.LENGTH_SHORT).show();
+        } else if (assisantStatus != null){
+            //Toast.makeText(this, "Service Disabled", Toast.LENGTH_SHORT).show();
+        }
+        super.onStop();
+    }
+
+    @Override
+    protected void onDestroy() {
+        //stopService(new Intent(MainActivity.this, VoiceRecogService.class));
+        super.onDestroy();
     }
 
     public void buttonClicked() {
@@ -270,21 +333,16 @@ public class MainActivity extends AppCompatActivity {
 
 //        rippleBackground.startRippleAnimation();
         if(!msg.isEmpty()){
-            adapterChat.addItem(new ModelMessage(msg, "user", "user"));
+            adapterChat.addItem(new ModelMessage(msg, "user", "user", null));
 
-            if(responseIntent.equals("recharge.phone.upgrade") &&
-                    modelMessageArrayList.get(modelMessageArrayList.size()-1).getText().equals("Yes")) {
-                // rechargeunlimitedconfirmationyes Rs <amnt>
-                //-------------
-
+            if(modelMessageArrayList.get(modelMessageArrayList.size()-1).getText().equals("Yes")) {
                 int GOOGLE_PAY_REQUEST_CODE = 123;
 
-                Uri uri =
-                        new Uri.Builder()
+                Uri uri = new Uri.Builder()
                                 .scheme("upi")
                                 .authority("pay")
-                                .appendQueryParameter("pa", "adityagunjal1365@okicici")
-                                .appendQueryParameter("pn", "Aditya Gunjal")
+                                .appendQueryParameter("pa", "billdesk.vodafone-prepaid@icici")
+                                .appendQueryParameter("pn", "Vodafone Prepaid")
                                 //.appendQueryParameter("mc", "your-merchant-code")
                                 // .appendQueryParameter("tr", "your-transaction-ref-id")
                                 //.appendQueryParameter("tn", "your-transaction-note")
@@ -296,10 +354,6 @@ public class MainActivity extends AppCompatActivity {
                 intent.setData(uri);
                 intent.setPackage(GOOGLE_PAY_PACKAGE_NAME);
                 this.startActivityForResult(intent, GOOGLE_PAY_REQUEST_CODE);
-
-                //-------------
-
-
             }
             else {
                 QueryInput input = QueryInput.newBuilder().setText(TextInput.newBuilder().setText(msg).setLanguageCode("en")).build();
@@ -320,15 +374,42 @@ public class MainActivity extends AppCompatActivity {
     protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
 
-        if (requestCode==123){
-            if (data.getStringExtra("response").contains("Status=FAILURE")){
+        if (requestCode == 123){
+            String text = modelMessageArrayList.get(modelMessageArrayList.size() - 2).getText();
+            String price = text.substring(text.lastIndexOf(" ") + 2).replaceAll("\\?", "");
 
+
+            if (data.getStringExtra("response").contains("Status=FAILURE")){
+                switch (responseIntent) {
+                    case "recharge.phone.upgrade":
+                        text = "rechargeunlimitedconfirmationno ₹" + price;
+                        break;
+                    case "sms-plan-upgrade":
+                        text = "rechargesmsconfirmationno ₹" + price;
+                        break;
+                    case "talktime-plan-upgrade":
+                        text = "rechargetalktimeconfirmationno ₹" + price;
+                        break;
+                    case "data.plan.upgrade":
+                        text = "rechargedataconfirmationno ₹" + price;
+                        break;
+                }
             }else{
-                String text = modelMessageArrayList.get(modelMessageArrayList.size()-2).getText();
-                String price = text.substring(text.lastIndexOf(" ") + 2).replaceAll("\\?", "");
-                text = "rechargeunlimitedconfirmationyes " + price + " Rs";
-//                Log.e("checkForYes", price);
-//                Log.e("checkForText", text);
+                switch (responseIntent) {
+                    case "recharge.phone.upgrade":
+                        text = "rechargeunlimitedconfirmationyes ₹" + price;
+                        break;
+                    case "sms-plan-upgrade":
+                        text = "rechargesmsconfirmationyes ₹" + price;
+                        break;
+                    case "talktime-plan-upgrade":
+                        text = "rechargetalktimeconfirmationyes ₹" + price;
+                        break;
+                    case "data.plan.upgrade":
+                        text = "rechargedataconfirmationyes " + price;
+                        break;
+                }
+
                 QueryInput input = QueryInput.newBuilder().setText(TextInput.newBuilder().setText(text).setLanguageCode("en")).build();
                 new RequestTask(MainActivity.this, sessionName, client, input, text, 0).execute();
             }
@@ -343,18 +424,84 @@ public class MainActivity extends AppCompatActivity {
                 text = response.getQueryResult().getFulfillmentText();
 
             responseIntent = response.getQueryResult().getIntent().getDisplayName();
+
+            if(modelMessageArrayList.get(modelMessageArrayList.size()-1).getText().equals("Yes")) {
+                int GOOGLE_PAY_REQUEST_CODE = 123;
+
+                Uri uri = new Uri.Builder()
+                        .scheme("upi")
+                        .authority("pay")
+                        .appendQueryParameter("pa", "billdesk.vodafone-prepaid@icici")
+                        .appendQueryParameter("pn", "Vodafone Prepaid")
+                        //.appendQueryParameter("mc", "your-merchant-code")
+                        // .appendQueryParameter("tr", "your-transaction-ref-id")
+                        //.appendQueryParameter("tn", "your-transaction-note")
+                        .appendQueryParameter("am", "1")
+                        .appendQueryParameter("cu", "INR")
+                        //.appendQueryParameter("url", "your-transaction-url")
+                        .build();
+                Intent intent = new Intent(Intent.ACTION_VIEW);
+                intent.setData(uri);
+                intent.setPackage(GOOGLE_PAY_PACKAGE_NAME);
+                this.startActivityForResult(intent, GOOGLE_PAY_REQUEST_CODE);
+            }
+
             Log.e("Intent", responseIntent);
             if(textToSpeech != null){
                 textToSpeech.speak(text, TextToSpeech.QUEUE_FLUSH, null);
             }
 
-            adapterChat.addItem(new ModelMessage(text, responseIntent, "bot"));
+            if(responseIntent.equals("recharge.phone.upgrade") || responseIntent.equals("sms-plan-upgrade") ||
+            responseIntent.equals("talktime-plan-upgrade") || responseIntent.equals("data.plan.upgrade")) {
+                String value = String.valueOf(response.getQueryResult().getParameters());
+                Log.e("UI_CHECK", value);
+                int index = value.indexOf("1");
+                value = value.substring(index+1);
+                String[] str = value.split("\n");
+                str[0] = str[0].substring(0, str[0].length() - 1).trim();
+
+                if (!str[0].equals("fields"))
+                    adapterChat.addItem(new ModelMessage(text, responseIntent, "bot", str[0]));
+                else
+                    adapterChat.addItem(new ModelMessage(text, responseIntent, "bot", null));
+            }
+            else
+                adapterChat.addItem(new ModelMessage(text, responseIntent, "bot", null));
             recyclerView.scrollToPosition(adapterChat.getItemCount() - 1);
 
             InputMethodManager imm = (InputMethodManager)getSystemService(Context.INPUT_METHOD_SERVICE);
             try {
                 imm.hideSoftInputFromWindow(getCurrentFocus().getWindowToken(), 0);
             }catch (NullPointerException e){
+
+            }
+
+            if(responseIntent.equals("smalltalk.greetings.bye")){
+                finish();
+            }
+
+            if(responseIntent.equals("change-language")){
+                try{
+
+                    String s = String.valueOf(response.getQueryResult().getParameters());
+
+                    String[] arr = s.split(":");
+
+                    if(arr.length > 1){
+                        String langString = (arr[2].split("\"")[1]).trim();
+                        langString = langString.toLowerCase();
+                        if(Helper.languages.containsKey(langString)){
+                            langCode = Helper.languages.get(langString);
+                            Intent i = getIntent();
+                            i.putExtra("LANGUAGE_CODE", langCode);
+                            finish();
+                            startActivity(i);
+                        }
+                    }
+
+                }catch (Exception e){
+
+                }
 
             }
         } else {
@@ -367,11 +514,11 @@ public class MainActivity extends AppCompatActivity {
         public boolean onTouch(View v, MotionEvent event) {
             if(event.getAction() == MotionEvent.ACTION_UP){
                 if(isRecording) {
-                    Toast.makeText(MainActivity.this, "Released !", Toast.LENGTH_SHORT).show();
+                  //  Toast.makeText(MainActivity.this, "Released !", Toast.LENGTH_SHORT).show();
                     try {
-                        recorder.stopRecording();
-                        new SpeechToTextTask(MainActivity.this,sessionName, client).execute();
-                        setupRecorder();
+                        //recorder.stopRecording();
+                        //new SpeechToTextTask(MainActivity.this,sessionName, client).execute();
+                        //setupRecorder();
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
@@ -379,11 +526,11 @@ public class MainActivity extends AppCompatActivity {
                 return true;
             }
             if(event.getAction() == MotionEvent.ACTION_DOWN){
-                Toast.makeText(MainActivity.this, "Pressed !", Toast.LENGTH_SHORT).show();
+               // Toast.makeText(MainActivity.this, "Pressed !", Toast.LENGTH_SHORT).show();
                 if(isRecording) {
 //                    Log.e("Error Check", "Recording Started");
-                    setupRecorder();
-                    recorder.startRecording();
+                    //setupRecorder();
+                    //recorder.startRecording();
                 }
                 else {
 //                    Log.e("Error Check", "Button Clicked");
@@ -440,6 +587,7 @@ public class MainActivity extends AppCompatActivity {
 
         @Override
         protected void onPostExecute(DetectIntentResponse detectIntentResponse) {
+
             String langCode = ((MainActivity)activity).langCode;
             if(!langCode.equals("en-IN")){
                 TranslateTask task = new TranslateTask(activity, sessionName, client, input, detectIntentResponse.getQueryResult().getFulfillmentText(), requestType);
@@ -517,16 +665,16 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    private void setupRecorder() {
-        recorder = OmRecorder.wav(
-                new PullTransport.Default(mic(), new PullTransport.OnAudioChunkPulledListener() {
-                    @Override public void onAudioChunkPulled(AudioChunk audioChunk) {
-                        //animateVoice((float) (audioChunk.maxAmplitude() / 200.0));
-                    }
-                }), file());
-
-
-    }
+//    private void setupRecorder() {
+//        recorder = OmRecorder.wav(
+//                new PullTransport.Default(mic(), new PullTransport.OnAudioChunkPulledListener() {
+//                    @Override public void onAudioChunkPulled(AudioChunk audioChunk) {
+//                        //animateVoice((float) (audioChunk.maxAmplitude() / 200.0));
+//                    }
+//                }), file());
+//
+//
+//    }
 
     private PullableSource mic() {
         return new PullableSource.Default(
@@ -626,70 +774,70 @@ public class MainActivity extends AppCompatActivity {
                 ((MainActivity)activity).callback(response, s);
         }
     }
-    static class SpeechToTextTask extends AsyncTask<Void, Void, JSONObject>{
-
-        Activity activity;
-        SessionName sessionName;
-        SessionsClient client;
-
-        public SpeechToTextTask(Activity activity, SessionName sessionName, SessionsClient client) {
-            this.activity = activity;
-            this.sessionName = sessionName;
-            this.client = client;
-
-        }
-
-        @Override
-        protected JSONObject doInBackground(Void... voids) {
-            String result = "";
-            try {
-                String url = MainActivity.host + "/speech-to-text?lang=" + ((MainActivity)activity).langCode;
-                File file = MainActivity.audioFile;
-                try {
-                    HttpClient httpclient = new DefaultHttpClient();
-
-                    HttpPost httppost = new HttpPost(url);
-
-                    InputStreamEntity reqEntity = new InputStreamEntity(
-                            new FileInputStream(file), -1);
-                    reqEntity.setContentType("binary/octet-stream");
-                    reqEntity.setChunked(true); // Send in multiple parts if needed
-                    httppost.setEntity(reqEntity);
-                    HttpResponse response = httpclient.execute(httppost);
-
-                    return new JSONObject(EntityUtils.toString(response.getEntity()));
-                } catch (Exception e) {
-                    // show error
-                    e.printStackTrace();
-                }
-
-                return null;
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-
-            return null;
-        }
-
-        @Override
-        protected void onPostExecute(JSONObject resp) {
-
-            try {
-//                Toast.makeText(activity, resp.getString("english"), Toast.LENGTH_SHORT).show();
-//                Log.e("STOP", resp.getString("english"));
-//                ((MainActivity) activity).adapterChat.addItem(new ModelMessage(resp.getString("source_lang"), "user", "user"));
-//                QueryInput input = QueryInput.newBuilder().setText(TextInput.newBuilder().setText(resp.getString("source_lang")).setLanguageCode("en")).build();
-//                new RequestTask(activity, sessionName, client, input, resp.getString("source_lang"),0).execute();
-                ((MainActivity)activity).query.setText(resp.getString("source_lang"));
-
-            } catch (Exception e) {
-                if(e instanceof NullPointerException){
-                    ((MainActivity) activity).adapterChat.addItem(new ModelMessage("Couldn't hear you, try again !", "bot", "bot"));
-                }
-                e.printStackTrace();
-            }
-        }
-    }
+//    static class SpeechToTextTask extends AsyncTask<Void, Void, JSONObject>{
+//
+//        Activity activity;
+//        SessionName sessionName;
+//        SessionsClient client;
+//
+//        public SpeechToTextTask(Activity activity, SessionName sessionName, SessionsClient client) {
+//            this.activity = activity;
+//            this.sessionName = sessionName;
+//            this.client = client;
+//
+//        }
+//
+//        @Override
+//        protected JSONObject doInBackground(Void... voids) {
+//            String result = "";
+//            try {
+//                String url = MainActivity.host + "/speech-to-text?lang=" + ((MainActivity)activity).langCode;
+//                File file = MainActivity.audioFile;
+//                try {
+//                    HttpClient httpclient = new DefaultHttpClient();
+//
+//                    HttpPost httppost = new HttpPost(url);
+//
+//                    InputStreamEntity reqEntity = new InputStreamEntity(
+//                            new FileInputStream(file), -1);
+//                    reqEntity.setContentType("binary/octet-stream");
+//                    reqEntity.setChunked(true); // Send in multiple parts if needed
+//                    httppost.setEntity(reqEntity);
+//                    HttpResponse response = httpclient.execute(httppost);
+//
+//                    return new JSONObject(EntityUtils.toString(response.getEntity()));
+//                } catch (Exception e) {
+//                    // show error
+//                    e.printStackTrace();
+//                }
+//
+//                return null;
+//            } catch (Exception e) {
+//                e.printStackTrace();
+//            }
+//
+//            return null;
+//        }
+//
+//        @Override
+//        protected void onPostExecute(JSONObject resp) {
+//
+//            try {
+////                Toast.makeText(activity, resp.getString("english"), Toast.LENGTH_SHORT).show();
+////                Log.e("STOP", resp.getString("english"));
+////                ((MainActivity) activity).adapterChat.addItem(new ModelMessage(resp.getString("source_lang"), "user", "user"));
+////                QueryInput input = QueryInput.newBuilder().setText(TextInput.newBuilder().setText(resp.getString("source_lang")).setLanguageCode("en")).build();
+////                new RequestTask(activity, sessionName, client, input, resp.getString("source_lang"),0).execute();
+//                ((MainActivity)activity).query.setText(resp.getString("source_lang"));
+//
+//            } catch (Exception e) {
+//                if(e instanceof NullPointerException){
+//                    ((MainActivity) activity).adapterChat.addItem(new ModelMessage("Couldn't hear you, try again !", "bot", "bot", null));
+//                }
+//                e.printStackTrace();
+//            }
+//        }
+//    }
 
 
     private boolean checkForTableExists(SQLiteDatabase db){
@@ -710,6 +858,33 @@ public class MainActivity extends AppCompatActivity {
             }
         }
         return false;
+    }
+
+    public class TextReciever extends BroadcastReceiver {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            Bundle b = intent.getExtras();
+            String text = b.getString("text");
+            adapterChat.addItem(new ModelMessage(text, "user", "user", null));
+            QueryInput input = QueryInput.newBuilder().setText(TextInput.newBuilder().setText(text).setLanguageCode("en")).build();
+            new RequestTask(MainActivity.this, sessionName, client, input, text, 0).execute();
+        }
+    }
+
+    @Override
+    public void onResume(){
+        myReceiver = new TextReciever();
+        final IntentFilter intentFilter = new IntentFilter("YourAction");
+        LocalBroadcastManager.getInstance(this).registerReceiver(myReceiver, intentFilter);
+        super.onResume();
+    }
+
+    @Override
+    public void onPause(){
+        if(myReceiver != null)
+            LocalBroadcastManager.getInstance(this).unregisterReceiver(myReceiver);
+        myReceiver = null;
+        super.onPause();
     }
 
 }
